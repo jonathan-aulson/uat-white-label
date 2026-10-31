@@ -1,0 +1,40 @@
+// Generated. DEPLOYMENT_ID binds this Worker to its own D1 database; never copy it between clients.
+{
+  "name": "uat-demo",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/api/*",
+      "/theme.css",
+      "/brand/*",
+      "/favicon.ico"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "uat-demo",
+      "database_id": "c810e278-6d12-42e5-8830-b48748dbfe6c",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "DOCS", "bucket_name": "uat-demo-docs" }],
+  "vars": {
+    "DEPLOYMENT_ID": "278c063d-2eb6-4d5b-a792-af257f2f6f43",
+    "ACCESS_TEAM_DOMAIN": "https://aulson-allata.cloudflareaccess.com",
+    "ACCESS_AUD": "4dea59f397b5087ec665c7d4490b89ca7767a220c4dcffbab7b3b661fae3029f",
+    "BOOTSTRAP_ADMINS": "jonathan.aulson@allata.com",
+    "ALLOWED_DOMAINS": ""
+  }
+}

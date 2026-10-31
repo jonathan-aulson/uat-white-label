@@ -1,0 +1,25 @@
+{
+  "name": "white-label-uat",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --config wrangler.dev.jsonc --local --port 8787",
+    "migrate:local": "wrangler d1 migrations apply uat --config wrangler.dev.jsonc --local",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "provision": "node tools/provision.mjs"
+  },
+  "dependencies": { "jose": "^6.1.0" },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.10.0",
+    "@cloudflare/workers-types": "latest",
+    "@playwright/test": "latest",
+    "@types/node": "latest",
+    "typescript": "latest",
+    "vitest": "~3.2.0",
+    "wrangler": "latest"
+  },
+  "engines": { "node": ">=24" }
+}

@@ -1,0 +1,5 @@
+scenario_id,scenario_title,step_id,instructions,expected,roles
+S1,Sign in,S1-1,Open the application and sign in,The home page is shown,Tester
+S1,Sign in,S1-2,Open your profile,Your name is displayed,Tester
+S2,Orders,S2-1,Create a new order,The order appears in the list,Tester;Reviewer
+S2,Orders,S2-2,Approve the order,The order shows as approved,Reviewer

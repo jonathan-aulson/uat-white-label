@@ -1,0 +1,16 @@
+node_modules
+.wrangler
+.dev.vars
+*.secret
+backups
+test-results
+.wrangler-e2e*
+wrangler.*.jsonc
+!wrangler.jsonc
+!wrangler.dev.jsonc
+!wrangler.demo.jsonc
+.env
+.env.*
+!.env.example
+*.log
+playwright-report

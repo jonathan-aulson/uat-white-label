@@ -1,0 +1,78 @@
+name: Check and deploy demo
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://uat-demo.jonathan-aulson-80b.workers.dev
+    concurrency:
+      group: uat-demo-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check this is still the latest main commit
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "A newer main push exists; this superseded commit will not deploy."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: steps.latest.outputs.current == 'true'
+        with:
+          node-version: '24'
+          cache: npm
+      - if: steps.latest.outputs.current == 'true'
+        run: npm ci
+      - name: Apply additive database migrations and deploy demo
+        if: steps.latest.outputs.current == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler d1 migrations apply uat-demo --remote --config wrangler.demo.jsonc
+          npx wrangler deploy --config wrangler.demo.jsonc
+      - name: Verify Cloudflare Access still protects production
+        if: steps.latest.outputs.current == 'true'
+        run: |
+          curl --silent --show-error --dump-header access-headers.txt --output /dev/null \
+            https://uat-demo.jonathan-aulson-80b.workers.dev/api/me
+          grep -Eq '^HTTP/[^ ]+ 302' access-headers.txt
+          grep -Eiq '^location: https://aulson-allata.cloudflareaccess.com/' access-headers.txt
