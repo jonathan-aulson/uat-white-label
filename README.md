@@ -47,7 +47,7 @@ Never deploy `wrangler.dev.jsonc`.
 ## Operating
 Admin console at `/admin`: Progress, Findings, Content (releases), Campaigns, Roster, Branding, Documents, Settings & ADO, Audit.
 - Releases are immutable once published; campaigns pin a release, and existing runs stay on theirs.
-- Branding colours must pass WCAG contrast checks; logos/favicons are re-encoded and stripped of metadata.
+- Approved brand colours are preserved: contrast ratios and suggested alternatives are advisory warnings, never a save gate. Invalid hex values/font choices still fail validation. Logos/favicons have metadata stripped without changing their pixel data.
 - `scripts/backup.sh <slug>` exports D1 and the redaction ledger. Re-apply redactions after any restore.
 - Example workspaces are selectable when creating a release; `examples/sample-steps.csv` shows the CSV import format.
 
@@ -76,6 +76,24 @@ Saved fixture values/captures reflect those currently available, not an immutabl
 Cloudflare Access JWT verified in the Worker; roster membership required; admin-only API; same-origin checks, body caps,
 strict CSP; ADO calls are host-allowlisted with no redirects; PDFs are structurally validated and require a synthetic-data attestation;
 the UI states that only synthetic data may be entered.
+
+## Uploaded PDFs and accessibility
+
+Client brand palettes need not meet contrast targets to be saved. Primary/background below 4.5:1
+and accent/background below 3:1 show warnings and optional alternatives, without requiring an
+override or silently recolouring the brand. Saving is not a statement of WCAG compliance.
+
+PDFs are stored and downloaded **byte-for-byte unchanged**, preserving ordinary HTTP/HTTPS/email
+links, internal navigation, and opening-page destinations. Standard compressed object streams
+and ordinary form fields are supported. Link destinations are not fetched or verified, and form
+behavior depends on the viewer.
+
+The upload gate parses PDF objects rather than blocking keywords in document text. Scripts,
+executable/file launches, embedded attachments, active media, automatic external actions, unsafe
+URI schemes, encryption and unparseable files remain blocked. Additional action hooks and action
+types outside the supported navigation allowlist are also rejected explicitly. Limits remain
+2 MiB / 50 pages, with screening complexity limits of 25,000 objects / 100,000 object visits.
+This is structural screening, **not antivirus** or a guarantee about external sites.
 
 ## Known limits
 PDF validation is structural only (no malware scan); no Office documents; large campaigns can exceed the Workers Free D1 write budget (use Workers Paid);

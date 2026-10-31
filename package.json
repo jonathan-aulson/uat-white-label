@@ -11,7 +11,7 @@
     "test:e2e": "playwright test",
     "provision": "node tools/provision.mjs"
   },
-  "dependencies": { "jose": "^6.1.0" },
+  "dependencies": { "jose": "^6.1.0", "pdf-lib": "^1.17.1" },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.10.0",
     "@cloudflare/workers-types": "latest",

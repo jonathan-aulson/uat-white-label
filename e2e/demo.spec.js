@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { PDFString } from 'pdf-lib';
+import { pdfFixture, pdfLink } from '../test/pdf-fixtures';
 
 test('author, run and triage a campaign on desktop and mobile', async ({ browser, baseURL }) => {
  const contexts = [];
@@ -30,6 +32,7 @@ test('author, run and triage a campaign on desktop and mobile', async ({ browser
   releaseData.content.scenarios[0].steps.push({
    id: 'S1-2', text: 'Submit the synthetic form.', expect: 'A confirmation appears.', roles: ['tester']
   });
+
   await admin.getByRole('textbox', { name: 'Release content JSON' }).fill(JSON.stringify(releaseData.content, null, 2));
   await admin.getByRole('button', { name: 'Publish…' }).click();
   await expect(admin.getByRole('button', { name: 'Make an editable copy' })).toBeVisible();
@@ -103,4 +106,56 @@ test('author, run and triage a campaign on desktop and mobile', async ({ browser
  } finally {
   if (test.info().status !== 'timedOut') for (const context of contexts) await context.close();
  }
+});
+
+test('low-contrast branding is advisory and linked PDFs upload unchanged', async ({ page }) => {
+ const errors = [];
+ page.on('pageerror', e => errors.push(e.message));
+ page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+ await page.context().setExtraHTTPHeaders({ 'x-dev-user': 'admin@example.com' });
+ await page.goto('/admin#branding');
+ const palette = { primary: '#f5f5aa', accent: '#eeeeee', background: '#ffffff', font: 'system' };
+ for (const [label, value] of [['Primary', palette.primary], ['Accent', palette.accent], ['Background', palette.background]]) {
+  await page.getByLabel(label.toLowerCase(), { exact: true }).evaluate((input, color) => {
+   input.value = color; input.dispatchEvent(new Event('input', { bubbles: true }));
+  }, value);
+ }
+ await expect(page.getByText(/Primary\/background contrast.*You can still save/)).toBeVisible();
+ const save = page.getByRole('button', { name: 'Save colours', exact: true });
+ await expect(save).toBeEnabled();
+ const saved = page.waitForResponse(r => r.url().endsWith('/api/admin/branding') && r.request().method() === 'PUT');
+ await save.click();
+ const response = await saved;
+ expect(response.status()).toBe(200);
+ expect((await response.json()).check.warnings).toHaveLength(2);
+ await expect(page.getByText('Brand colours saved. Contrast warnings are advisory; your palette was not changed.', { exact: true })).toBeVisible();
+ await expect(page.getByText(/Contrast ratios:/)).toBeVisible();
+ await expect(page.getByText(/Accent\/background contrast.*You can still save/)).toBeVisible();
+ const stored = await page.request.get('/api/admin/branding');
+ expect(await stored.json()).toMatchObject(palette);
+ const invalid = await page.request.put('/api/admin/branding', { data: { ...palette, primary: 'not-a-colour' } });
+ expect(invalid.status()).toBe(400);
+
+ const bytes = await pdfFixture(document => {
+  pdfLink(document, document.context.obj({ S: 'URI', URI: PDFString.of('https://allata.com/') }));
+  document.catalog.set(document.context.obj('OpenAction'), document.context.obj({ S: 'GoTo', D: [document.getPage(0).ref, 'Fit'] }));
+ });
+ await page.goto('/admin#documents');
+ const title = `Linked PDF ${Date.now()}`;
+ await page.getByLabel('Title', { exact: true }).fill(title);
+ await page.getByRole('textbox', { name: 'Audience roles' }).fill('tester');
+ await page.getByLabel('PDF file', { exact: true }).setInputFiles({ name: 'linked-synthetic.pdf', mimeType: 'application/pdf', buffer: Buffer.from(bytes) });
+ await page.getByRole('checkbox').check();
+ const uploading = page.waitForResponse(r => r.url().includes('/api/admin/documents?') && r.request().method() === 'POST');
+ await page.getByRole('button', { name: 'Upload', exact: true }).click();
+ const uploaded = await uploading;
+ expect(uploaded.status()).toBe(201);
+ const info = await uploaded.json();
+ expect(info.warnings.join(' ')).toContain('External links are preserved');
+ await expect(page.getByText('Uploaded unchanged; links are preserved.', { exact: true })).toBeVisible();
+ await expect(page.getByRole('cell', { name: title, exact: true })).toBeVisible();
+ const download = await page.request.get(`/api/admin/documents/${info.id}/download`);
+ expect(download.ok()).toBe(true);
+ expect(await download.body()).toEqual(Buffer.from(bytes));
+ expect(errors).toEqual([]);
 });

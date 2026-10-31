@@ -26,17 +26,18 @@ export function suggestContrast(color: string, bg: string, min: number): string 
  return null;
 }
 
-export interface BrandCheck { ok: boolean; errors: { field: string; message: string; suggestion?: string }[]; ratios: Record<string, number> }
+interface BrandIssue { field: string; message: string; suggestion?: string }
+export interface BrandCheck { ok: boolean; errors: BrandIssue[]; warnings: BrandIssue[]; ratios: Record<string, number> }
 export function checkBranding(b: { primary: string; accent: string; background: string }): BrandCheck {
- const errors: BrandCheck['errors'] = []; const ratios: Record<string, number> = {};
+ const errors: BrandIssue[] = []; const warnings: BrandIssue[] = []; const ratios: Record<string, number> = {};
  for (const f of ['primary', 'accent', 'background'] as const) if (!HEX_RE.test(b[f])) errors.push({ field: f, message: `${f} must be a 6-digit hex colour such as #0b4751` });
- if (errors.length) return { ok: false, errors, ratios };
+ if (errors.length) return { ok: false, errors, warnings, ratios };
  ratios.primaryOnBackground = contrast(b.primary, b.background);
  ratios.accentOnBackground = contrast(b.accent, b.background);
  ratios.textOnPrimary = contrast(b.primary, onColor(b.primary));
- if (ratios.primaryOnBackground < 4.5) errors.push({ field: 'primary', message: `Primary colour is used for links and headings on the background; contrast is ${ratios.primaryOnBackground.toFixed(2)}:1 but 4.5:1 is required.`, suggestion: suggestContrast(b.primary, b.background, 4.5) ?? undefined });
- if (ratios.accentOnBackground < 3) errors.push({ field: 'accent', message: `Accent colour is used for focus rings and selection markers; contrast is ${ratios.accentOnBackground.toFixed(2)}:1 but 3:1 is required.`, suggestion: suggestContrast(b.accent, b.background, 3) ?? undefined });
- return { ok: errors.length === 0, errors, ratios };
+ if (ratios.primaryOnBackground < 4.5) warnings.push({ field: 'primary', message: `Primary/background contrast is ${ratios.primaryOnBackground.toFixed(2)}:1, below the 4.5:1 accessibility target for links and headings. You can still save these brand colours.`, suggestion: suggestContrast(b.primary, b.background, 4.5) ?? undefined });
+ if (ratios.accentOnBackground < 3) warnings.push({ field: 'accent', message: `Accent/background contrast is ${ratios.accentOnBackground.toFixed(2)}:1, below the 3:1 accessibility target for focus rings and selection markers. You can still save these brand colours.`, suggestion: suggestContrast(b.accent, b.background, 3) ?? undefined });
+ return { ok: true, errors, warnings, ratios };
 }
 
 export function deriveTheme(w: Pick<Workspace, 'primary' | 'accent' | 'background' | 'font'>) {

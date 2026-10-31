@@ -22,14 +22,37 @@ export async function settingsTab(main) {
 
 export async function brandingTab(main) {
  const b = await api('/api/admin/branding');
- main.append(el('h2', 'Branding'), el('p', 'Colours are checked for accessible contrast before they can be saved.', 'help'));
+ main.append(el('h2', 'Branding'), el('p', 'Use your approved brand colours. Contrast checks are advisory: valid colours can always be saved without changing your palette.', 'help'));
  const c = {}; const row = el('div', undefined, 'card row'); const out = el('div');
  for (const k of ['primary', 'accent', 'background']) { c[k] = input(b[k], { type: 'color', 'aria-label': k }); row.append(field(k[0].toUpperCase() + k.slice(1), c[k])); }
  const font = select([['system', 'System'], ['roboto', 'Roboto'], ['roboto-baskerville', 'Roboto + Baskerville']], b.font); row.append(field('Font', font));
  const vals = () => ({ primary: c.primary.value, accent: c.accent.value, background: c.background.value });
- const showCheck = ck => out.replaceChildren(ck.ok ? el('p', 'Contrast OK: ' + Object.entries(ck.ratios).map(([k, v]) => `${k} ${Number(v).toFixed(1)}`).join(', '), 'state') : (() => { const ul = el('ul'); for (const e of ck.errors) ul.append(el('li', `${e.field}: ${e.message}${e.suggestion ? ' Try ' + e.suggestion : ''}`, 'issue error')); return ul; })());
- const live = safe(async () => showCheck(await api('/api/admin/branding/check', 'POST', vals()))); for (const i of Object.values(c)) i.oninput = live;
- row.append(button('Save colours', safe(async () => { try { await api('/api/admin/branding', 'PUT', { ...vals(), font: font.value }); show('Saved', 'ok'); } catch (e) { if (e.data?.check) showCheck(e.data.check); throw e; } }), 'primary'));
+ const showCheck = ck => {
+  const nodes = [];
+  if (Object.keys(ck.ratios).length) nodes.push(el('p', 'Contrast ratios: ' + Object.entries(ck.ratios).map(([k, v]) => `${k} ${Number(v).toFixed(2)}:1`).join(', '), 'state'));
+  for (const [issues, className] of [[ck.errors, 'issue error'], [ck.warnings || [], 'issue warn']]) {
+   if (!issues.length) continue;
+   const list = el('ul');
+   for (const issue of issues) list.append(el('li', `${issue.field}: ${issue.message}${issue.suggestion ? ' Optional alternative: ' + issue.suggestion : ''}`, className));
+   nodes.push(list);
+  }
+  out.replaceChildren(...nodes);
+ };
+ let checkVersion = 0;
+ const live = safe(async () => {
+  const version = ++checkVersion;
+  const check = await api('/api/admin/branding/check', 'POST', vals());
+  if (version === checkVersion) showCheck(check);
+ });
+ for (const i of Object.values(c)) i.oninput = live;
+ row.append(button('Save colours', safe(async () => {
+  const version = ++checkVersion;
+  try {
+   const saved = await api('/api/admin/branding', 'PUT', { ...vals(), font: font.value });
+   if (version === checkVersion) showCheck(saved.check);
+   show(saved.check.warnings.length ? 'Brand colours saved. Contrast warnings are advisory; your palette was not changed.' : 'Brand colours saved.', 'ok');
+  } catch (e) { if (version === checkVersion && e.data?.check) showCheck(e.data.check); throw e; }
+ }), 'primary'));
  main.append(row, out); showCheck(b.check);
  for (const kind of ['logo', 'favicon']) {
   const has = b.assets.find(a => a.kind === kind); const card = el('section', undefined, 'card'); const f = input('', { type: 'file', accept: 'image/png,image/jpeg', 'aria-label': kind + ' file' });
@@ -46,11 +69,24 @@ export async function documentsTab(main) {
  if (!d.enabled) { main.append(el('p', 'Document storage (R2) is not enabled on this deployment.', 'card')); return; }
  const title = input('', { maxlength: '120', 'aria-label': 'Title' }), aud = input('', { 'aria-label': 'Audience roles', placeholder: 'role keys, comma-separated (blank = all)' }), file = input('', { type: 'file', accept: 'application/pdf', 'aria-label': 'PDF file' });
  const cb = el('input'); cb.type = 'checkbox'; const l = el('label', undefined, 'field'); l.append(cb, ' I attest this file contains only synthetic or generic data');
- const form = el('section', undefined, 'card'); form.append(el('h3', 'Upload PDF'), field('Title', title), field('Audience', aud), file, l,
-  button('Upload', safe(async () => { const f = file.files[0]; if (!f) throw new Error('Choose a PDF'); await api(`/api/admin/documents?title=${encodeURIComponent(title.value)}&audience=${encodeURIComponent(aud.value)}&attested=${cb.checked ? 1 : 0}&filename=${encodeURIComponent(f.name)}`, 'POST', undefined, { type: 'application/pdf', body: await f.arrayBuffer() }); show('Uploaded', 'ok'); window.dispatchEvent(new HashChangeEvent('hashchange')); }), 'primary'));
- main.append(form, table(['Title', 'Id', 'Status', 'Size', 'Uploaded', ''], d.documents.map(x => [x.title, x.id, x.status, Math.round(x.size / 1024) + ' KB', fmtDate(x.created_at),
-  (() => { const r = el('div', undefined, 'row'); const a = el('a', 'Download'); a.href = `/api/admin/documents/${x.id}/download`; r.append(a); if (x.status !== 'revoked') r.append(button('Revoke', safe(async () => { await api(`/api/admin/documents/${x.id}/revoke`, 'POST', {}); window.dispatchEvent(new HashChangeEvent('hashchange')); }), 'small danger')); return r; })()])),
+ const uploadInfo = el('div', undefined, 'state', { role: 'status' });
+ const form = el('section', undefined, 'card'); form.append(el('h3', 'Upload PDF'), el('p', 'PDFs are kept unchanged, including web links and internal navigation. Link destinations are not verified. Scripts, executable actions and embedded files are not allowed.', 'help'), field('Title', title), field('Audience', aud), file, l,
+  button('Upload', safe(async () => {
+   const f = file.files[0]; if (!f) throw new Error('Choose a PDF');
+   const uploaded = await api(`/api/admin/documents?title=${encodeURIComponent(title.value)}&audience=${encodeURIComponent(aud.value)}&attested=${cb.checked ? 1 : 0}&filename=${encodeURIComponent(f.name)}`, 'POST', undefined, { type: 'application/pdf', body: await f.arrayBuffer() });
+   title.value = aud.value = file.value = ''; cb.checked = false;
+   uploadInfo.replaceChildren(el('p', 'Uploaded unchanged; links are preserved.'), ...(uploaded.warnings || []).map(w => el('p', w, 'warn')));
+   await drawDocuments();
+  }), 'primary'), uploadInfo);
+ const documentList = el('div');
+ const drawDocuments = async () => {
+  const { documents } = await api('/api/admin/documents');
+  documentList.replaceChildren(table(['Title', 'Id', 'Status', 'Size', 'Uploaded', ''], documents.map(x => [x.title, x.id, x.status, Math.round(x.size / 1024) + ' KB', fmtDate(x.created_at),
+   (() => { const r = el('div', undefined, 'row'); const a = el('a', 'Download'); a.href = `/api/admin/documents/${x.id}/download`; r.append(a); if (x.status !== 'revoked') r.append(button('Revoke', safe(async () => { await api(`/api/admin/documents/${x.id}/revoke`, 'POST', {}); await drawDocuments(); }), 'small danger')); return r; })()])));
+ };
+ main.append(form, documentList,
   el('p', 'Reference a document from a step using its Id in the release content.', 'help'));
+ await drawDocuments();
 }
 
 export async function auditTab(main) {

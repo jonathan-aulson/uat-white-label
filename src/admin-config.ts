@@ -82,7 +82,7 @@ async function branding(req: Request, env: Env, user: Identity, path: string): P
   for (const k of ['primary', 'accent', 'background']) if (typeof b[k] !== 'string' || !HEX_RE.test(b[k] as string)) throw new HttpError(400, `${k} must be a #rrggbb colour`);
   if (!['system', 'roboto', 'roboto-baskerville'].includes(String(b.font))) throw new HttpError(400, 'Unknown font choice');
   const check = checkBranding({ primary: b.primary as string, accent: b.accent as string, background: b.background as string });
-  if (!check.ok) return json({ error: 'These colours do not meet the accessibility contrast minimums', check }, 400);
+  if (!check.ok) return json({ error: 'Invalid brand colour values', check }, 400);
   await saveBranding(env, user, { primary: (b.primary as string).toLowerCase(), accent: (b.accent as string).toLowerCase(), background: (b.background as string).toLowerCase(), font: b.font as Workspace['font'] });
   await record(env, user, 'branding-update', 'branding');
   return json({ ok: true, check });
@@ -112,13 +112,13 @@ async function documents(req: Request, env: Env, user: Identity, path: string): 
   const title = text(q.get('title') ?? '', 120, true).trim();
   const audience = (q.get('audience') ?? '').split(',').map(s => s.trim()).filter(Boolean);
   const bytes = await limitedBytes(req, PDF_LIMITS.bytes);
-  let info; try { info = validateUploadedPdf(bytes); } catch (e) { if (e instanceof PdfError) throw new HttpError(400, e.message); throw e; }
+  let info; try { info = await validateUploadedPdf(bytes); } catch (e) { if (e instanceof PdfError) throw new HttpError(400, e.message); throw e; }
   const id = uuid(), r2Key = `documents/${id}.pdf`, sha = await sha256Hex(bytes);
   await env.DOCS.put(r2Key, bytes, { httpMetadata: { contentType: 'application/pdf' } });
   await statement(env, 'INSERT INTO documents(id,title,filename,size,sha256,r2_key,audience,values_note,attested,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,1,?,?)',
    id, title, safeFilename(q.get('filename') ?? `${title}.pdf`), bytes.length, sha, r2Key, JSON.stringify(audience), 'generic', user.email, now()).run();
   await record(env, user, 'document-upload', id, `${sha} pages=${info.pages}`);
-  return json({ id, sha256: sha, pages: info.pages }, 201);
+  return json({ id, sha256: sha, pages: info.pages, warnings: info.warnings }, 201);
  }
  const m = path.match(/^\/documents\/([^/]+)\/(revoke|download)$/);
  if (m) {
