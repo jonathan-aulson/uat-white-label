@@ -1,4 +1,4 @@
-import { $, api, button, el, loadShell, safe, show, confirmDialog } from './ui.js';
+import { $, api, button, el, loadShell, safe, show, confirmDialog, chooseTester } from './ui.js';
 import { mountRun } from './runview.js';
 
 let me, stop;
@@ -29,9 +29,12 @@ async function route() {
  const m = location.hash.match(/^#run=(.+)$/);
  try {
   if (stop) { stop(); stop = null; }
-  if (m) { const main = $('main'); main.replaceChildren(); main.append(button('← All campaigns', () => { location.hash = ''; }, 'small')); const box = el('div'); main.append(box); stop = mountRun(box, decodeURIComponent(m[1]), { base: '/api/runs', email: me.email }); }
+  if (me.openAccess && !me.selected) { await chooseTester($('main')); return; }
+  if (m) { const main = $('main'); main.replaceChildren(); main.append(button('← All campaigns', () => { location.hash = ''; }, 'small')); const box = el('div'); main.append(box); stop = mountRun(box, decodeURIComponent(m[1]), { base: '/api/runs', email: me.email, openAccess: me.openAccess }); }
   else await home();
- } catch (e) { show(e.message); }
+ } catch (e) {
+  show(e.status === 404 && me.openAccess ? 'This run belongs to another tester or is no longer available. Return to My testing or change tester.' : e.message);
+ }
 }
 (async () => {
  try {
@@ -39,6 +42,13 @@ async function route() {
   const n = $('notice'); if (me.workspace.privacy_notice) { n.textContent = me.workspace.privacy_notice; n.hidden = false; }
   if (me.workspace.support_text) { const s = el('p', me.workspace.support_text, 'help'); s.style.textAlign = 'center'; n.after(s); }
   window.addEventListener('hashchange', route); route();
+  if (me.openAccess) window.addEventListener('change-tester', safe(async () => {
+   const state = $('saveState').textContent;
+   if (state && state !== 'All changes saved' && !confirmDialog('Discard unsaved edits and change tester?')) return;
+   if (stop) { stop(); stop = null; }
+   await api('/api/participant', 'DELETE');
+   location.replace('/');
+  }));
  } catch (e) {
   show(e.status === 403 ? e.message : e.message || 'Could not load');
   $('main').replaceChildren(el('p', e.status === 403 ? 'Access to this workspace is by invitation only.' : '', 'card'));

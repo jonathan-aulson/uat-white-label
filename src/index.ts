@@ -8,6 +8,7 @@ import { adminFindingsApi } from './admin-findings';
 import { all, first, HttpError, json, limitedBytes } from './db';
 import { getWorkspace } from './settings';
 import { themeCss } from './branding';
+import { isOpen, openIdentity, selectionApi } from './open-access';
 
 export const securityHeaders = {
  'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
@@ -48,19 +49,29 @@ export function createHandler(dependencies: { jwks?: JWTVerifyGetKey; fetcher?: 
   let response: Response;
   try {
    await checkDeployment(env);
-   const user = await authenticate(req, env, dependencies.jwks);
    if (!['GET', 'HEAD'].includes(req.method)) {
     const origin = req.headers.get('Origin');
-    if (origin && origin !== new URL(req.url).origin) throw new HttpError(403, 'Cross-origin write denied');
-    rateLimit(user.sub);
-    const max = !user.isAdmin ? 16384 : ADMIN_UPLOAD.test(path) ? 2.1 * 1024 * 1024 : ADMIN_BIG_JSON.test(path) ? 512 * 1024 : 65536;
-    req = new Request(req, { body: await limitedBytes(req, max) });
+    if ((isOpen(env) || origin) && origin !== new URL(req.url).origin) throw new HttpError(403, 'Same-origin writes are required');
    }
-   if (path.startsWith('/api/admin/')) {
-    if (!user.isAdmin) throw new HttpError(403, 'Administrator access required');
-    const sub = path.slice('/api/admin'.length); const fetcher = dependencies.fetcher ?? fetch;
-    response = (await adminConfigApi(req, env, user, sub, fetcher)) || (await adminContentApi(req, env, user, sub)) || (await adminFindingsApi(req, env, user, sub, fetcher)) || json({ error: 'Not found' }, 404);
-   } else response = (await testerApi(req, env, user, path)) || json({ error: 'Not found' }, 404);
+   if (path === '/api/participants' || (isOpen(env) && path === '/api/participant')) {
+    if (!['GET', 'HEAD'].includes(req.method)) {
+     rateLimit('open:selection');
+     req = new Request(req, { body: await limitedBytes(req, 1024) });
+    }
+    response = (await selectionApi(req, env, path)) ?? json({ error: 'Not found' }, 404);
+   } else {
+    const user = isOpen(env) ? await openIdentity(req, env) : await authenticate(req, env, dependencies.jwks);
+    if (!['GET', 'HEAD'].includes(req.method)) {
+     rateLimit(user.sub);
+     const max = !user.isAdmin ? 16384 : ADMIN_UPLOAD.test(path) ? 2.1 * 1024 * 1024 : ADMIN_BIG_JSON.test(path) ? 512 * 1024 : 65536;
+     req = new Request(req, { body: await limitedBytes(req, max) });
+    }
+    if (path.startsWith('/api/admin/')) {
+     if (!user.isAdmin) throw new HttpError(403, 'Administrator access required');
+     const sub = path.slice('/api/admin'.length); const fetcher = dependencies.fetcher ?? fetch;
+     response = (await adminConfigApi(req, env, user, sub, fetcher)) || (await adminContentApi(req, env, user, sub)) || (await adminFindingsApi(req, env, user, sub, fetcher)) || json({ error: 'Not found' }, 404);
+    } else response = (await testerApi(req, env, user, path)) || json({ error: 'Not found' }, 404);
+   }
   } catch (e) {
    if (e instanceof HttpError) response = json({ error: e.message, ...e.extra }, e.status);
    else {

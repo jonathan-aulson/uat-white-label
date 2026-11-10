@@ -1,7 +1,7 @@
 export interface Env {
  DB: D1Database; ASSETS: Fetcher; DOCS?: R2Bucket;
  DEPLOYMENT_ID: string; ACCESS_TEAM_DOMAIN: string; ACCESS_AUD: string; BOOTSTRAP_ADMINS: string; ALLOWED_DOMAINS?: string;
- ADO_PAT?: string; DEV_AUTH_BYPASS?: string;
+ ADO_PAT?: string; DEV_AUTH_BYPASS?: string; OPEN_ACCESS?: string;
 }
 export interface Identity { sub: string; email: string; isAdmin: boolean; instance: number; displayName: string }
 

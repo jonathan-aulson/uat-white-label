@@ -6,8 +6,15 @@ test('author, run and triage a campaign on desktop and mobile', async ({ browser
  const contexts = [];
  const errors = [];
  async function pageFor(email, viewport = { width: 1280, height: 900 }) {
-  const context = await browser.newContext({ baseURL, viewport, extraHTTPHeaders: { 'x-dev-user': email } });
+  const context = await browser.newContext({ baseURL, viewport, extraHTTPHeaders: { Origin: baseURL } });
   contexts.push(context);
+  if (email !== 'admin@example.com') {
+   const roster = await (await context.request.get('/api/admin/members')).json();
+   const member = roster.find(m => m.email === email);
+   expect(member).toBeTruthy();
+   const selected = await context.request.post('/api/participant', { data: { id: String(member.instance) } });
+   expect(selected.ok()).toBe(true);
+  }
   const page = await context.newPage();
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
@@ -112,7 +119,7 @@ test('low-contrast branding is advisory and linked PDFs upload unchanged', async
  const errors = [];
  page.on('pageerror', e => errors.push(e.message));
  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
- await page.context().setExtraHTTPHeaders({ 'x-dev-user': 'admin@example.com' });
+ await page.context().setExtraHTTPHeaders({ Origin: new URL(test.info().project.use.baseURL).origin });
  await page.goto('/admin#branding');
  const palette = { primary: '#f5f5aa', accent: '#eeeeee', background: '#ffffff', font: 'system' };
  for (const [label, value] of [['Primary', palette.primary], ['Accent', palette.accent], ['Background', palette.background]]) {

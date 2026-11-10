@@ -5,6 +5,7 @@ import { loadCampaign, runContext } from './release';
 import { getWorkspace, publicWorkspace } from './settings';
 import { latestSharedGeneration, phaseAvailable, phaseDatesOf, renderTokens, resolveRunFixtures, valueMap, ensureSnapshot, type Snapshot } from './fixtures';
 import { generatePdf } from './pdf';
+import { isOpen, openWorkspace } from './open-access';
 
 export const displayOf = async (env: Env, email: string) => {
  const m = await first<{ display_name: string }>(env, 'SELECT display_name FROM members WHERE email=?', email);
@@ -75,12 +76,16 @@ export async function testerApi(req: Request, env: Env, user: Identity, path: st
  const method = req.method;
  if (path === '/api/me' && ['GET', 'PUT'].includes(method)) {
   if (method === 'PUT') {
+   if (isOpen(env)) throw new HttpError(400, 'Edit tester names in the admin roster.');
    const b = await body(req); const name = text(b.displayName, 80);
    await env.DB.batch([
     statement(env, 'UPDATE users SET display_name=? WHERE sub=?', name, user.sub),
     statement(env, "UPDATE members SET display_name=? WHERE email=? AND display_name=''", name, user.email)
    ]);
   }
+  if (isOpen(env)) return json({ email: user.email, sub: user.sub, isAdmin: false, canAdmin: true, openAccess: true,
+   selected: !!user.instance, participantId: user.instance ? String(user.instance) : null, instance: user.instance,
+   displayName: user.displayName, workspace: await openWorkspace(env) });
   const row = await first<{ display_name: string }>(env, 'SELECT display_name FROM users WHERE sub=?', user.sub);
   const ws = await getWorkspace(env);
   return json({ email: user.email, sub: user.sub, isAdmin: user.isAdmin, instance: user.instance, displayName: row?.display_name || '', workspace: { ...publicWorkspace(ws), has_logo: !!(await first(env, "SELECT 1 AS x FROM assets WHERE kind='logo'")) } });

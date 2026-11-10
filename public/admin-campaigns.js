@@ -1,7 +1,7 @@
 import { api, button, el, field, fmtDate, input, select, show, table, safe } from './ui.js';
 
 export async function rosterTab(main, _p, me) {
- main.append(el('h2', 'Roster'), el('p', 'Only people on this roster can sign in. Each gets a permanent two-digit code used in their test data. Removing someone deactivates them; their code is never reused.', 'help'));
+ main.append(el('h2', 'Roster'), el('p', 'The roster assigns testers to campaigns and reserves a permanent code for their test data. In open access, anyone can select an active tester; names are not verified. Removing someone deactivates them; their code is never reused.', 'help'));
  const email = input('', { type: 'email', 'aria-label': 'Email' }), name = input('', { 'aria-label': 'Name' }), role = select([['tester', 'Tester'], ['admin', 'Administrator']], 'tester');
  const form = el('div', undefined, 'card row'); form.append(field('Email', email), field('Name', name), field('Access', role),
   button('Add or reactivate', safe(async () => { await api('/api/admin/members', 'POST', { email: email.value, display_name: name.value, role: role.value }); email.value = name.value = ''; await draw(); }), 'primary'));

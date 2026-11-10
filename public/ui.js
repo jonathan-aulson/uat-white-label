@@ -17,10 +17,12 @@ export function input(value = '', attrs = {}) { const i = el('input'); i.value =
 export function select(options, value) {
  const s = el('select'); for (const [v, l] of options) { const o = el('option', l ?? v); o.value = v; s.append(o); } if (value !== undefined) s.value = value; return s;
 }
+let participantId = null;
 export async function api(path, method = 'GET', value, raw) {
  let res;
  try {
   const headers = {}; let body;
+  if (participantId && !['GET', 'HEAD'].includes(method)) headers['X-UAT-Participant'] = participantId;
   if (raw) { headers['Content-Type'] = raw.type; body = raw.body; } else if (value !== undefined) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(value); }
   res = await fetch(path, { method, headers, body, cache: 'no-store' });
  } catch { const e = new Error('Not saved – offline or unreachable'); e.status = 0; throw e; }
@@ -57,7 +59,20 @@ export function toast(text) {
 }
 export function confirmDialog(message) { return window.confirm(message); }
 export async function loadShell(admin) {
- const me = await api('/api/me');
+ const bootstrap = await api('/api/participants');
+ let me;
+ if (bootstrap.openAccess && (admin || !bootstrap.selectedId)) {
+  me = { openAccess: true, canAdmin: true, selected: false, participantId: null, displayName: admin ? 'Open-access admin (unverified)' : '',
+   workspace: bootstrap.workspace };
+ } else {
+  try { me = await api('/api/me'); }
+  catch (e) {
+   if (!bootstrap.openAccess || e.data?.code !== 'selection_required') throw e;
+   me = { openAccess: true, canAdmin: true, selected: false, participantId: null, workspace: bootstrap.workspace };
+   show(e.message);
+  }
+ }
+ participantId = me.participantId || null;
  const ws = me.workspace;
  document.title = ws.project_name + (admin ? ' – admin' : '');
  $('product').textContent = ws.project_name;
@@ -65,9 +80,32 @@ export async function loadShell(admin) {
  const nav = $('nav'); nav.replaceChildren();
  const a = (href, text) => { const x = el('a', text); x.href = href; return x; };
  nav.append(a('/', 'My testing'));
- if (me.isAdmin) nav.append(a('/admin', 'Admin'));
+ if (me.isAdmin || me.canAdmin) nav.append(a('/admin', 'Admin'));
  for (const l of ws.links) { const x = a(l.url, l.label); x.target = '_blank'; x.rel = 'noopener noreferrer'; nav.append(x); }
- nav.append(el('span', me.displayName || me.email, 'who'));
+ if (me.openAccess) {
+  nav.append(el('span', 'Open access — identities are not verified.', 'badge warn'));
+  if (admin) nav.append(el('span', 'Open-access admin (unverified)', 'who'));
+  else if (me.selected) {
+   const label = bootstrap.participants.find(p => p.id === me.participantId)?.label || 'Tester';
+   nav.append(el('span', label, 'who'), button('Change tester', () => window.dispatchEvent(new Event('change-tester')), 'small'));
+  }
+ } else nav.append(el('span', me.displayName || me.email, 'who'));
  return me;
+}
+export async function chooseTester(main) {
+ const data = await api('/api/participants');
+ main.replaceChildren(el('h2', 'Choose a tester'), el('p', 'Select your name to keep your progress and feedback together. This does not verify your identity.', 'help'));
+ if (data.selectionError) main.append(el('p', data.selectionError, 'warn'));
+ if (!data.participants.length) {
+  const link = el('a', 'Add testers in Admin → Roster'); link.href = '/admin#roster';
+  main.append(el('p', 'No active testers are available yet.', 'card'), link);
+  return;
+ }
+ const picker = select([['', 'Choose your name…'], ...data.participants.map(p => [p.id, p.label])], '');
+ main.append(field('Tester', picker), button('Continue', safe(async () => {
+  if (!picker.value) throw new Error('Choose a tester to continue.');
+  await api('/api/participant', 'POST', { id: picker.value });
+  location.reload();
+ }), 'primary'));
 }
 export const fmtDate = s => s ? new Date(s).toLocaleString() : '';

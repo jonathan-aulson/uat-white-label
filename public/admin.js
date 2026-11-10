@@ -25,7 +25,7 @@ async function route() {
 }
 (async () => {
  try { me = await loadShell(true); } catch (e) { show(e.message); return; }
- if (!me.isAdmin) { $('main').replaceChildren(el('p', 'Administrator access is required.', 'card')); return; }
+ if (!me.isAdmin && !me.canAdmin) { $('main').replaceChildren(el('p', 'Administrator access is required.', 'card')); return; }
  window.addEventListener('hashchange', route); route();
 })();
 export { safe, api };

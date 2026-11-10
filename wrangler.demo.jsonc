@@ -35,6 +35,7 @@
     "ACCESS_TEAM_DOMAIN": "https://aulson-allata.cloudflareaccess.com",
     "ACCESS_AUD": "4dea59f397b5087ec665c7d4490b89ca7767a220c4dcffbab7b3b661fae3029f",
     "BOOTSTRAP_ADMINS": "jonathan.aulson@allata.com",
-    "ALLOWED_DOMAINS": ""
+    "ALLOWED_DOMAINS": "",
+    "OPEN_ACCESS": "1"
   }
 }

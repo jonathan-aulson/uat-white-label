@@ -27,7 +27,7 @@ export function renderRich(parent, template, vals) {
 export function mountRun(container, runId, opts) {
  const readonly = !!opts.readonly; const base = opts.base;
  const outboxKey = 'uat-outbox:' + runId;
- let data, timer; const draft = new Map(); const conflicts = new Map(); const inflight = new Map(); const warnings = new Map(); const openState = new Map();
+ let data, timer, stopped = false; const draft = new Map(); const conflicts = new Map(); const inflight = new Map(); const warnings = new Map(); const openState = new Map();
  const outbox = () => { try { return JSON.parse(localStorage.getItem(outboxKey) || '{}'); } catch { return {}; } };
  const putOutbox = o => { try { Object.keys(o).length ? localStorage.setItem(outboxKey, JSON.stringify(o)) : localStorage.removeItem(outboxKey); } catch { /* storage unavailable */ } };
  const results = () => new Map(data.results.map(r => [r.step_id, r]));
@@ -43,11 +43,12 @@ export function mountRun(container, runId, opts) {
  async function load(keepScroll) {
   const y = window.scrollY;
   data = await api(base + '/' + encodeURIComponent(runId));
+  if (stopped) return;
   render(); if (keepScroll) window.scrollTo(0, y);
  }
 
  async function saveStep(stepId) {
-  if (readonly) return;
+  if (readonly || stopped) return;
   const d = draft.get(stepId); if (!d) return;
   if (inflight.get(stepId)) { inflight.set(stepId, 'again'); return; }
   const def = statusMap().get(d.status);
@@ -70,9 +71,9 @@ export function mountRun(container, runId, opts) {
    } else { warnings.set(stepId, e.message); draft.delete(stepId); const o = outbox(); delete o[stepId]; putOutbox(o); await load(true).catch(() => {}); }
   } finally {
    const again = inflight.get(stepId) === 'again'; inflight.delete(stepId);
-   if (again && !conflicts.has(stepId)) await saveStep(stepId);
+   if (again && !stopped && !conflicts.has(stepId)) await saveStep(stepId);
   }
-  renderStep(stepId); refreshState();
+  if (!stopped) { renderStep(stepId); refreshState(); }
  }
  function refreshWarn(stepId) { const w = container.querySelector(`[data-step="${CSS.escape(stepId)}"] .warn`); if (w) w.textContent = warnings.get(stepId) || ''; }
  const timers = new Map();
@@ -84,6 +85,7 @@ export function mountRun(container, runId, opts) {
   refreshState();
  }
  async function retryOutbox() {
+  if (stopped) return;
   const o = outbox(); for (const [stepId, d] of Object.entries(o)) { if (!draft.has(stepId)) draft.set(stepId, d); await saveStep(stepId); }
  }
 
@@ -235,12 +237,21 @@ export function mountRun(container, runId, opts) {
   root.append(feedbackCard());
   container.replaceChildren(root); updateSummary(); refreshState();
  }
+ const tick = () => { if (stopped || document.hidden || container.contains(document.activeElement) && document.activeElement.tagName === 'TEXTAREA') return; if (draft.size || inflight.size || conflicts.size) return; load(true).catch(e => { if (!stopped) show(e.message); }); };
+ const visible = () => { if (!document.hidden) tick(); };
  (async () => {
-  try { await load(false); await retryOutbox(); } catch (e) { show(e.message); }
-  const tick = () => { if (document.hidden || container.contains(document.activeElement) && document.activeElement.tagName === 'TEXTAREA') return; if (draft.size || inflight.size || conflicts.size) return; load(true).catch(() => {}); };
+  try { await load(false); await retryOutbox(); }
+  catch (e) {
+   if (!stopped) show(e.status === 404 && opts.openAccess ? 'This run belongs to another tester or is no longer available. Return to My testing or change tester.' : e.message);
+  }
+  if (stopped) return;
   timer = setInterval(tick, 30000);
-  window.addEventListener('online', retryOutbox); document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+  window.addEventListener('online', retryOutbox); document.addEventListener('visibilitychange', visible);
  })();
- return () => clearInterval(timer);
+ return () => {
+  stopped = true; clearInterval(timer);
+  for (const timeout of timers.values()) clearTimeout(timeout);
+  window.removeEventListener('online', retryOutbox); document.removeEventListener('visibilitychange', visible);
+ };
 }
 export { fmtDate };

@@ -1,7 +1,7 @@
 # White-label UAT product
 
 A generic User Acceptance Testing workspace on Cloudflare Workers + D1 (+ optional R2). One deployment per client.
-Testers sign in through Cloudflare Access, run role-based scenarios, record results and feedback; admins author content,
+Testers run role-based scenarios and record results and feedback; admins author content,
 run campaigns, triage findings and (optionally) create Azure DevOps work items. Content, branding, roster and settings
 live in the database, so changing them needs no rebuild.
 
@@ -9,9 +9,10 @@ live in the database, so changing them needs no rebuild.
 ```
 npm install
 npm run migrate:local
-npm run dev        # http://localhost:8787, auth bypass is loopback-only
+npm run dev        # http://localhost:8787, no sign-in
 ```
-Send the header `x-dev-user: admin@example.com` (a header-injecting browser extension, or Playwright). `admin@example.com` is the bootstrap admin.
+Open `/admin` directly and add tester names in Roster, then choose a name on My testing.
+No browser extension, identity header or sign-in form is needed. Local data stays in `.wrangler/state`.
 `npm test` runs unit/API tests in the Workers runtime; `npm run typecheck` checks TypeScript.
 For browser checks, run `npx playwright install chromium` once and then `npm run test:e2e`.
 The browser runner starts its own local server on port 8790 and uses separate local storage;
@@ -19,8 +20,8 @@ it covers desktop/mobile testing and the admin bug-review dialog without writing
 
 ## Demo production and continuous deployment
 
-The private repository is `jonathan-aulson/uat-white-label`. Its production URL is
-https://uat-demo.jonathan-aulson-80b.workers.dev/ (Cloudflare Access required).
+The public repository is https://github.com/jonathan-aulson/uat-white-label. Its production URL is
+https://uat-demo.jonathan-aulson-80b.workers.dev/ (open access; no sign-in).
 
 Every push to `main` runs a clean `npm ci`, typecheck, unit/API tests and local browser checks.
 Passing checks automatically deploy the existing `uat-demo` Worker. Pull requests run the same
@@ -73,9 +74,30 @@ Very long scripts fail explicitly rather than silently dropping steps (32,000-ch
 Saved fixture values/captures reflect those currently available, not an immutable event-time snapshot.
 
 ## Security model
-Cloudflare Access JWT verified in the Worker; roster membership required; admin-only API; same-origin checks, body caps,
-strict CSP; ADO calls are host-allowlisted with no redirects; PDFs are structurally validated and require a synthetic-data attestation;
-the UI states that only synthetic data may be entered.
+Client deployments default to Cloudflare Access JWT verification and roster/admin authorization.
+The demo and local development explicitly set `OPEN_ACCESS` to the exact string `"1"` instead:
+**there is no sign-in and anyone with the URL can use admin functions**, including reading/changing
+feedback and documents, editing campaigns and creating ADO bugs. Names and admin audit attribution
+are unverified. Do not use this mode for private/client data.
+
+Open-mode testers choose an active roster name; a host-only HttpOnly SameSite=Lax cookie remembers
+the choice for 30 days (Secure on HTTPS). Change tester clears the choice. This is attribution,
+not authentication: anyone can choose any active tester. Existing campaign assignments and test
+histories remain attached to the same identities. Multiple historical identities for one email
+require explicit administrator resolution; the app does not silently merge them. Edit names in
+Admin → Roster, not through the tester profile. Public picker options omit email addresses, but
+the openly accessible admin roster does not.
+
+Open-mode writes require a matching Origin. Tester writes also include the selected participant
+identifier, so a stale tab cannot accidentally save as a different selected tester. These checks
+do not make an open workspace private. Shared admin audit events use `open:admin`, not a real person's
+identity. Same-origin checks, body/rate caps, strict CSP, ADO host allowlisting/no redirects,
+document screening and synthetic-data attestations remain in both modes.
+
+To keep a client installation protected, leave `OPEN_ACCESS` unset and configure its Access
+application and JWT settings. Enabling open mode behind an existing Access application does not
+remove that edge gate; remove only that deployment's dedicated Access application if public
+access is intended. Never remove unrelated shared policies.
 
 ## Uploaded PDFs and accessibility
 
